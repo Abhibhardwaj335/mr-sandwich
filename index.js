@@ -12,6 +12,18 @@ exports.handler = async (event) => {
   const method = event.httpMethod;
   const path = event.path;
 
+  if (method === "POST" && path.includes("/login")) {
+    const { username, password } = JSON.parse(event.body");
+    const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+      return response(200, { success: true });
+    } else {
+      return response(401, { success: false, message: "Invalid credentials" });
+    }
+  }
+
   if (method === "POST" && path.includes("/customer")) {
     const { name, phoneNumber, dob } = JSON.parse(event.body);
 
