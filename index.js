@@ -509,7 +509,7 @@ exports.handler = async (event) => {
 
   // POST /orders
   if (method === 'POST' && path.startsWith('/orders')) {
-    const { tableId, items, paymentDetails } = JSON.parse(body);
+    const { tableId, items, paymentDetails } = JSON.parse(event.body);
 
     if (!tableId || !items || !items.length || !paymentDetails) {
       return response(400, { message: "Missing required order details" });
