@@ -13,7 +13,7 @@ exports.handler = async (event) => {
   const path = event.path;
 
   if (method === "POST" && path.includes("/login")) {
-    const { username, password } = JSON.parse(event.body");
+    const { username, password } = JSON.parse(event.body);
     const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
@@ -457,8 +457,8 @@ exports.handler = async (event) => {
   }
 
   // GET /coupons/{couponCode}
-  if (method === 'GET' && path.startsWith('/coupons/')) {
-    const couponCode = path.split('/coupons/')[1];
+  if (method === 'GET' && path.startsWith('/coupons') && event.queryStringParameters?.code?.trim()) {
+    const couponCode = event.queryStringParameters?.code;
     if (!couponCode) return response(400, { message: "Missing coupon code" });
 
     try {
@@ -467,7 +467,7 @@ exports.handler = async (event) => {
         KeyConditionExpression: 'PK = :pk and SK = :sk', // Query based on PK (coupon code) and SK (DETAILS)
         ExpressionAttributeValues: {
           ':pk': `COUPON#${couponCode}`, // The PK is COUPON#${couponCode}
-          ':sk': 'DETAILS', // The constant SK to identify the coupon detail record
+          ':sk': 'COUPON_DETAILS', // The constant SK to identify the coupon detail record
         },
       }).promise();
 
@@ -483,7 +483,7 @@ exports.handler = async (event) => {
   }
 
   // GET /coupons
-  if (method === 'GET' && path === '/coupons') {
+  if (method === 'GET' && path.startsWith('/coupons') && !event.queryStringParameters?.code?.trim()) {
     try {
       const result = await dynamo.scan({
         TableName: TABLE_NAME,
@@ -498,8 +498,8 @@ exports.handler = async (event) => {
   }
 
    // DELETE /coupons/{couponCode}
-   if (method === 'DELETE' && path.startsWith('/coupons/')) {
-     const couponCode = path.split('/coupons/')[1];
+   if (method === 'DELETE' && path.startsWith('/coupons')) {
+     const couponCode = event.queryStringParameters?.code;
      if (!couponCode) return response(400, { message: "Missing coupon code" });
 
      try {
@@ -507,7 +507,7 @@ exports.handler = async (event) => {
          TableName: TABLE_NAME,
          Key: {
            PK: `COUPON#${couponCode}`, // The PK based on coupon code
-           SK: 'DETAILS', // Constant SK for coupon details
+           SK: 'COUPON_DETAILS', // Constant SK for coupon details
          },
        };
 
