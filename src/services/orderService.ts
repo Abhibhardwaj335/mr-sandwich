@@ -19,15 +19,8 @@ interface PaymentDetails {
 export const handler = async (event: APIGatewayEvent, context: Context) => {
   const { path, httpMethod } = event;
   console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
-  if (httpMethod === 'POST' && path === '/order') {
-    let body;
-    try {
-      body = JSON.parse(event.body!); // Use non-null assertion to safely access the body
-    } catch (err) {
-      return error({ message: "Invalid JSON body" }, 400);
-    }
-
-    const { tableId, items, paymentDetails } = body;
+  if (httpMethod === 'POST' && path === '/orders') {
+    const { tableId, items, paymentDetails } = event.body ? JSON.parse(event.body) : {};
 
     if (!tableId) {
       return error({ message: "Missing tableId" }, 400);

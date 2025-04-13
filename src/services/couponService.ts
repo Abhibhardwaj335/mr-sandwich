@@ -15,7 +15,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     if (httpMethod === 'POST' && path === COUPON_PATH) {
       const body = event.body ? JSON.parse(event.body) : {};;
 
-      if (!body.code || !body.name || !body.discount) {
+      if (!body.code || !body.description || !body.title) {
         return error({ message: "Missing required coupon fields" }, 400);
       }
 
