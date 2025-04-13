@@ -3,17 +3,20 @@ export const success = (statusCode: number, body: any = {}) => {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
     },
     body: JSON.stringify(body),
   };
 };
 
-export const error = (message: string, statusCode: number = 500) => {
+export const error = (body: { message: string; details?: string }, statusCode: number = 500) => {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
   };
 };
+

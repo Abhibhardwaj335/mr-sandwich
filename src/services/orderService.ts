@@ -1,82 +1,103 @@
-import { dynamo } from '../utils/dynamoClient';
+import { APIGatewayEvent, Context } from 'aws-lambda';
+import { dynamo, TABLE_NAME } from '../utils/dynamoClient';
 import { success, error } from '../utils/response';
+import { handleError } from '../utils/errorHandler';
 
-export const handler = async (event) => {
-  const method = event.httpMethod;
+interface Item {
+  id?: string;
+  name: string;
+  price: number;
+  quantity?: number;
+}
 
-  try {
-    // POST /orders
-      if (method === 'POST' && path.startsWith('/orders')) {
-        const { tableId, items, paymentDetails } = JSON.parse(event.body);
+interface PaymentDetails {
+  method: string;
+  amount: number;
+  transactionId?: string;
+}
 
-        if (!tableId || !items || !items.length || !paymentDetails) {
-          return response(400, { message: "Missing required order details" });
-        }
+export const handler = async (event: APIGatewayEvent, context: Context) => {
+  const { path, httpMethod } = event;
+  console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
+  if (httpMethod === 'POST' && path === '/order') {
+    let body;
+    try {
+      body = JSON.parse(event.body!); // Use non-null assertion to safely access the body
+    } catch (err) {
+      return error({ message: "Invalid JSON body" }, 400);
+    }
 
-        const orderId = generateOrderId(); // Function to generate a unique order ID
-        const createdAt = new Date().toISOString();
+    const { tableId, items, paymentDetails } = body;
 
-        // Calculate total payment
-        const totalAmount = items.reduce((sum, item) => {
-          const quantity = item.quantity || 1;
-          return sum + item.price * quantity;
-        }, 0);
+    if (!tableId) {
+      return error({ message: "Missing tableId" }, 400);
+    }
 
-        // Format order items for individual item entries
-        const orderItems = items.map((item, index) => ({
-          PK: `ORDER#${orderId}`,
-          SK: `ITEM#${item.id || index + 1}`,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity || 1,
-          addedAt: createdAt,
-        }));
+    if (!items || !items.length) {
+      return error({ message: "Missing order items" }, 400);
+    }
 
-        const orderParams = {
-          TableName: TABLE_NAME,
-          Item: {
-            PK: `ORDER#${orderId}`,
-            SK: 'DETAILS',
-            orderId,
-            tableId,
-            items, // Raw items array for summary
-            totalAmount,
-            paymentDetails,
-            status: 'PENDING',
-            createdAt,
-          },
-        };
+    if (!paymentDetails) {
+      return error({ message: "Missing payment details" }, 400);
+    }
 
-        try {
-          // Save the main order entry
-          await dynamo.put(orderParams).promise();
+    const orderId = generateOrderId();
+    const createdAt = new Date().toISOString();
 
-          // Save each item entry
-          const itemPutParams = orderItems.map(item => ({
-            TableName: TABLE_NAME,
-            Item: item,
-          }));
+    // Correct typing for 'sum' and 'item'
+    const totalAmount = items.reduce((sum: number, item: Item) => sum + item.price * (item.quantity || 1), 0);
 
-          await Promise.all(itemPutParams.map(params => dynamo.put(params).promise()));
+    // Correct typing for 'item' and 'index'
+    const orderItems = items.map((item: Item, index: number) => ({
+      PK: `ORDER#${orderId}`,
+      SK: `ITEM#${item.id || index + 1}`,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity || 1,
+      addedAt: createdAt,
+    }));
 
-          return response(200, {
-            message: "Order placed successfully",
-            orderId,
-            totalAmount,
-          });
-        } catch (err) {
-          console.error("🔥 Error placing order:", err);
-          return response(500, { message: "Failed to place order" });
-        }
-      }
-    return error('Method not supported', 405);
-  } catch (err) {
-    return error(err.message);
+    const orderParams = {
+      TableName: TABLE_NAME,
+      Item: {
+        PK: `ORDER#${orderId}`,
+        SK: 'DETAILS',
+        orderId,
+        tableId,
+        items,
+        totalAmount,
+        paymentDetails,
+        status: 'PENDING',
+        createdAt,
+      },
+    };
+
+    try {
+      await dynamo.put(orderParams).promise();
+
+      const batchParams = {
+        RequestItems: {
+          [TABLE_NAME]: orderItems.map((item: Item) => ({  // Type 'item' as 'Item'
+            PutRequest: {
+              Item: item,
+            },
+          })),
+        },
+      };
+
+      await dynamo.batchWrite(batchParams).promise();
+
+      return success(201, { message: "Order placed successfully", orderId, totalAmount });
+
+    } catch (err: unknown) {
+      return handleError("placing order:", err);
+    }
   }
+  return error({ message: "Method not supported" }, 405);
 };
 
-function generateOrderId() {
-  const timestamp = Date.now(); // milliseconds since epoch
-  const random = Math.floor(Math.random() * 10000); // random 4-digit number
+function generateOrderId(): string {
+  const timestamp = Date.now(); // Get the current timestamp
+  const random = Math.floor(Math.random() * 10000); // Random 4-digit number
   return `ORD-${timestamp}-${random}`;
 }

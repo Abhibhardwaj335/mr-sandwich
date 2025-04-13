@@ -1,73 +1,78 @@
-import { dynamo } from '../utils/dynamoClient';
+import { APIGatewayEvent, Context } from 'aws-lambda';
+import { dynamo, TABLE_NAME } from '../utils/dynamoClient';
 import { success, error } from '../utils/response';
+import { handleError } from '../utils/errorHandler';
 
-export const handler = async (event) => {
-  const method = event.httpMethod;
+const CUSTOMER_PATH = '/dashboard';
+const PROFILE_SK = 'PROFILE';
+const REWARD_PREFIX = 'REWARD#';
+const MESSAGE_PREFIX = 'MESSAGE#';
+const COUPON_PREFIX = 'COUPON#';
+const RECORD_TYPE_CUSTOMER = 'customer';
 
-  try {
-    // GET /dashboard?id=
-      if (method === "GET" && path.includes("/dashboard")) {
-        const customerId = event.queryStringParameters?.id;
-        if (!customerId) return response(400, { message: "Missing ID" });
+export const handler = async (event: APIGatewayEvent, context: Context) => {
+  const { path, httpMethod } = event;
+  console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
+  // GET /dashboard?id= - Fetch customer dashboard with related data
+  if (httpMethod === 'GET' && path.includes(CUSTOMER_PATH)) {
+    const customerId = event.queryStringParameters?.id;
+    if (!customerId) {
+      return error({ message: "Missing customer ID" }, 400);
+    }
 
-        try {
-          // Fetch customer details
-          const customerResult = await dynamo.get({
-            TableName: TABLE_NAME,
-            Key: { PK: `CUSTOMER#${customerId}`, SK: "PROFILE" },
-          }).promise();
+    try {
+      const customerResult = await dynamo.get({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: `CUSTOMER#${customerId}`,
+          SK: PROFILE_SK,
+        },
+      }).promise();
 
-          if (!customerResult.Item || customerResult.Item.recordType !== "customer") {
-            return response(404, { message: "Customer not found" });
-          }
-
-          // Fetch rewards related to the customer
-          const rewardsResult = await dynamo.query({
-            TableName: TABLE_NAME,
-            KeyConditionExpression: "PK = :pk AND begins_with(SK, :rewardPrefix)",
-            ExpressionAttributeValues: {
-              ":pk": `CUSTOMER#${customerId}`,
-              ":rewardPrefix": "REWARD#",
-            },
-          }).promise();
-
-          // Fetch messages for the customer (assuming you have a 'messages' table or similar)
-          const messagesResult = await dynamo.query({
-            TableName: TABLE_NAME,
-            KeyConditionExpression: "PK = :pk AND begins_with(SK, :messagePrefix)",
-            ExpressionAttributeValues: {
-              ":pk": `CUSTOMER#${customerId}`,
-              ":messagePrefix": "MESSAGE#",
-            },
-          }).promise();
-
-          // Fetch coupon usage related to the customer (assuming you store coupon usage as records)
-          const couponsResult = await dynamo.query({
-            TableName: TABLE_NAME,
-            KeyConditionExpression: "PK = :pk AND begins_with(SK, :couponPrefix)",
-            ExpressionAttributeValues: {
-              ":pk": `CUSTOMER#${customerId}`,
-              ":couponPrefix": "COUPON#",
-            },
-          }).promise();
-
-          // Prepare the response structure
-          const responseBody = {
-            customer: customerResult.Item,
-            rewards: rewardsResult.Items || [],
-            messages: messagesResult.Items || [],
-            coupons: couponsResult.Items || [],
-          };
-
-          return response(200, responseBody);
-
-        } catch (err) {
-          console.error("🔥 Error fetching dashboard:", err);
-          return response(500, { message: "Error fetching dashboard" });
-        }
+      if (!customerResult.Item || customerResult.Item.recordType !== RECORD_TYPE_CUSTOMER) {
+        return error({ message: "Customer not found" }, 404);
       }
-    return error('Method not supported', 405);
-  } catch (err) {
-    return error(err.message);
+
+      const rewardsResult = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :rewardPrefix)",
+        ExpressionAttributeValues: {
+          ":pk": `CUSTOMER#${customerId}`,
+          ":rewardPrefix": REWARD_PREFIX,
+        },
+      }).promise();
+
+      const messagesResult = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :messagePrefix)",
+        ExpressionAttributeValues: {
+          ":pk": `CUSTOMER#${customerId}`,
+          ":messagePrefix": MESSAGE_PREFIX,
+        },
+      }).promise();
+
+      const couponsResult = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :couponPrefix)",
+        ExpressionAttributeValues: {
+          ":pk": `CUSTOMER#${customerId}`,
+          ":couponPrefix": COUPON_PREFIX,
+        },
+      }).promise();
+
+      const responseBody = {
+        customer: customerResult.Item,
+        rewards: rewardsResult.Items || [],
+        messages: messagesResult.Items || [],
+        coupons: couponsResult.Items || [],
+      };
+
+      return success(200, responseBody);
+    } catch (err: unknown) {
+      return handleError("fetching dashboard:", err);
+    }
   }
+
+  // This should be outside the GET block
+  return error({ message: "Method not supported" }, 405);
 };

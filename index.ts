@@ -1,3 +1,4 @@
+import { APIGatewayEvent, Context } from 'aws-lambda';
 import { handler as authHandler } from './src/services/authService';
 import { handler as orderHandler } from './src/services/orderService';
 import { handler as customerHandler } from './src/services/customerService';
@@ -6,17 +7,19 @@ import { handler as couponHandler } from './src/services/couponService';
 import { handler as dashboardHandler } from './src/services/dashboardService';
 import { handler as whatsappHandler } from './src/services/whatsappService';
 
-
-export const handler = async (event, context) => {
+export const handler = async (event: APIGatewayEvent, context: Context) => {  // Type 'event' as 'APIGatewayEvent' and 'context' as 'Context'
   const path = event.path;
   const method = event.httpMethod;
-  if (path.startsWith('/login')) return authHandler(event);
-  if (path.startsWith('/order')) return orderHandler(event);
-  if (path.startsWith('/customers')) return customerHandler(event);
-  if (path.startsWith('/rewards')) return rewardHandler(event);
-  if (path.startsWith('/coupons')) return couponHandler(event);
-  if (path.startsWith('/dashboard')) return dashboardHandler(event);
-  if (path.startsWith('/send-message')) return whatsappHandler(event);
+  console.log('📥 Request received:', JSON.stringify(event));
+  if (path.startsWith('/login')) return authHandler(event, context);
+  if (path.startsWith('/orders')) return orderHandler(event, context);
+  if (path.startsWith('/customer')) return customerHandler(event, context);
+  if (path.startsWith('/rewards')) return rewardHandler(event, context);
+  if (path.startsWith('/coupons')) return couponHandler(event, context);
+  if (path.startsWith('/dashboard')) return dashboardHandler(event, context);
+  if (path.startsWith('/messages')) return whatsappHandler(event, context);
+  if (path.startsWith('/whatsapp')) return whatsappHandler(event, context);
+
   return {
     statusCode: 404,
     body: JSON.stringify({ message: 'Route not found' }),

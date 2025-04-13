@@ -1,137 +1,157 @@
-import { dynamo } from '../utils/dynamoClient';
+import { APIGatewayEvent, Context } from 'aws-lambda';
+import { dynamo, TABLE_NAME } from '../utils/dynamoClient';
 import { success, error } from '../utils/response';
+import axios from 'axios';
+import { handleError } from '../utils/errorHandler';
 
-export const handler = async (event) => {
-  const method = event.httpMethod;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN!;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!;
+const BRAND_NAME = "Mr. Sandwich";
 
-  try {
-    // POST /whatsapp?id=
-      if (method === "POST" && path.includes("/whatsapp")) {
-        const customerId = event.queryStringParameters?.id;
-        if (!customerId) return response(400, { message: "Missing customer ID" });
+// Define a type for the expected response item structure
+interface CustomerProfile {
+  PK: string;
+  SK: string;
+  name: string;
+  phoneNumber: string;
+}
 
-        try {
-          const result = await dynamo.get({
-            TableName: TABLE_NAME,
-            Key: { PK: `CUSTOMER#${customerId}`, SK: "PROFILE" },  // Update this query with PK/SK
-          }).promise();
+interface Message {
+  PK: string;
+  SK: string;
+  body: string;
+}
 
-          if (!result.Item) return response(404, { message: "Customer not found" });
+export const handler = async (event: APIGatewayEvent, context: Context) => {
+  const { path, httpMethod } = event;
+  console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
+  // === POST /whatsapp?id= ===
+  if (httpMethod === "POST" && path === "/whatsapp") {
+    const customerId = event.queryStringParameters?.id;
+    if (!customerId) return error({ message: "Missing customer ID" }, 400);
 
-          const {
-            phoneNumber,
-            templateName,
-            promoCode,
-            menuItem,
-            occasion,
-            rewardPoints,
-            period,
-          } = JSON.parse(event.body);
+    try {
+      // Fetch customer profile from DynamoDB
+      const result = await dynamo.get({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: `CUSTOMER#${customerId}`,
+          SK: "PROFILE",
+        },
+      }).promise();
 
-          if (!phoneNumber || !templateName) {
-            return response(400, { message: "Missing phone number or template name" });
-          }
+      if (!result.Item) return error({ message: "Customer not found" }, 404);
 
-          const customerName = result.Item.name;
-          const brandName = "Mr. Sandwich";
-          let templateParams = [];
+      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, period } =
+        event.body ? JSON.parse(event.body) : {};
 
-          switch (templateName) {
-            case "promocode_update":
-              if (!promoCode) return response(400, { message: "Missing promo code" });
-              templateParams = [
-                { type: "text", text: customerName },
-                { type: "text", text: promoCode },
-                { type: "text", text: brandName },
-              ];
-              break;
-            case "new_menu_alert":
-              if (!menuItem) return response(400, { message: "Missing menu item" });
-              templateParams = [
-                { type: "text", text: customerName },
-                { type: "text", text: menuItem },
-                { type: "text", text: brandName },
-              ];
-              break;
-            case "exclusive_offer":
-              if (!occasion) return response(400, { message: "Missing occasion" });
-              templateParams = [
-                { type: "text", text: customerName },
-                { type: "text", text: occasion },
-                { type: "text", text: brandName },
-              ];
-              break;
-            case "rewards_summary":
-              if (!rewardPoints || !period)
-                return response(400, { message: "Missing rewards summary info" });
-              templateParams = [
-                { type: "text", text: customerName },
-                { type: "text", text: rewardPoints },
-                { type: "text", text: period },
-              ];
-              break;
-            default:
-              return response(400, { message: "Invalid template name" });
-          }
-
-          const url = `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
-          const res = await axios.post(
-            url,
-            {
-              messaging_product: "whatsapp",
-              to: phoneNumber,
-              type: "template",
-              template: {
-                name: templateName,
-                language: { code: "en" },
-                components: [
-                  {
-                    type: "body",
-                    parameters: templateParams
-                  }
-                ]
-              }
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-
-          return response(200, { message: "WhatsApp message sent!" });
-
-        } catch (err) {
-          console.error("🔥 Error sending WhatsApp:", err.response?.data || err);
-          return response(500, { message: "Error sending WhatsApp message" });
-        }
+      if (!phoneNumber || !templateName) {
+        return error({ message: "Missing phone number or template name" }, 400);
       }
 
-      // GET /messages?id=
-        if (method === "GET" && path.includes("/messages")) {
-          const customerId = event.queryStringParameters?.id;
-          if (!customerId) return response(400, { message: "Missing customer ID" });
+      // Ensure phoneNumber is a valid string
+      if (typeof phoneNumber !== 'string') {
+        return error({ message: "Invalid phone number" }, 400);
+      }
 
-          try {
-            const result = await dynamo.query({
-              TableName: TABLE_NAME,
-              KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",  // Adjust for the composite key
-              ExpressionAttributeValues: {
-                ":pk": `CUSTOMER#${customerId}`,  // Using customerId in PK
-                ":skPrefix": "MESSAGE#",  // Ensuring SK starts with "MESSAGE"
+      const customerName = (result.Item as CustomerProfile).name; // Typecasting
+      let templateParams: { type: string; text: string }[] = [];
+
+      switch (templateName) {
+        case "promocode_update":
+          if (!promoCode) return error({ message: "Missing promo code" }, 400);
+          templateParams = [
+            { type: "text", text: customerName },
+            { type: "text", text: promoCode },
+            { type: "text", text: BRAND_NAME },
+          ];
+          break;
+
+        case "new_menu_alert":
+          if (!menuItem) return error({ message: "Missing menu item" }, 400);
+          templateParams = [
+            { type: "text", text: customerName },
+            { type: "text", text: menuItem },
+            { type: "text", text: BRAND_NAME },
+          ];
+          break;
+
+        case "exclusive_offer":
+          if (!occasion) return error({ message: "Missing occasion" }, 400);
+          templateParams = [
+            { type: "text", text: customerName },
+            { type: "text", text: occasion },
+            { type: "text", text: BRAND_NAME },
+          ];
+          break;
+
+        case "rewards_summary":
+          if (!rewardPoints || !period)
+            return error({ message: "Missing rewards summary info" }, 400);
+          templateParams = [
+            { type: "text", text: customerName },
+            { type: "text", text: rewardPoints.toString() }, // Convert to string
+            { type: "text", text: period },
+          ];
+          break;
+
+        default:
+          return error({ message: "Invalid template name" }, 400);
+      }
+
+      // Send WhatsApp message via the API
+      const url = `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+      const response = await axios.post(
+        url,
+        {
+          messaging_product: "whatsapp",
+          to: phoneNumber,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: "en" },
+            components: [
+              {
+                type: "body",
+                parameters: templateParams,
               },
-            }).promise();
-
-            return response(200, result.Items || []);
-          } catch (err) {
-            console.error("🔥 Error fetching messages:", err);
-            return response(500, { message: "Error fetching messages" });
-          }
+            ],
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json",
+          },
         }
-    return error('Method not supported', 405);
-  } catch (err) {
-    return error(err.message);
+      );
+
+      return success(200, { message: "WhatsApp message sent!" });
+    } catch (err: unknown) {
+      return handleError("sending WhatsApp", err);
+    }
   }
+
+  // === GET /messages?id= ===
+  if (httpMethod === "GET" && path === "/messages") {
+    const customerId = event.queryStringParameters?.id;
+    if (!customerId) return error({ message: "Missing customer ID" }, 400);
+
+    try {
+      const result = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues: {
+          ":pk": `CUSTOMER#${customerId}`,
+          ":sk": "MESSAGE#",
+        },
+      }).promise();
+      return success(200, { messages: result.Items || [] });
+    } catch (err: unknown) {
+      return handleError("fetching messages", err);
+    }
+  }
+
+  return error({ message: "Method not supported" }, 405);
 };

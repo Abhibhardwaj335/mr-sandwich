@@ -1,69 +1,76 @@
-import { dynamo } from '../utils/dynamoClient';
+import { APIGatewayEvent, Context } from 'aws-lambda';
+import { dynamo, TABLE_NAME } from '../utils/dynamoClient';
 import { success, error } from '../utils/response';
+import { handleError } from '../utils/errorHandler';
 
-export const handler = async (event) => {
-  const method = event.httpMethod;
+const CUSTOMER_PATH = '/customer';
+const PROFILE_SK = 'PROFILE';
+const RECORD_TYPE_CUSTOMER = 'customer';
+
+export const handler = async (event: APIGatewayEvent, context: Context) => {
+  const { path, httpMethod } = event;
+  console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
   try {
-    if (method === "POST" && path.includes("/customer")) {
-        const { name, phoneNumber, dob } = JSON.parse(event.body);
-        if (!name || !phoneNumber || !dob) {
-          return response(400, { message: "Missing fields" });
-        }
+    // POST /customer - Create a new customer
+    if (httpMethod === 'POST' && path.includes(CUSTOMER_PATH)) {
+      const { name, phoneNumber, dob } = event.body ? JSON.parse(event.body) : {};
+      if (!name || !phoneNumber || !dob) {
+        return error({ message: "Missing required fields" }, 400);
+      }
 
-        try {
-          const customerId = phoneNumber.substring(3);
-          const customerData = {
+      const customerId = phoneNumber.substring(3);
+      const customerData = {
+        PK: `CUSTOMER#${customerId}`,
+        SK: PROFILE_SK,
+        recordType: RECORD_TYPE_CUSTOMER,
+        name,
+        phoneNumber,
+        dob,
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        await dynamo.put({
+          TableName: TABLE_NAME,
+          Item: customerData,
+        }).promise();
+
+        console.log("✅ Customer saved:", customerData);
+        return success(201, { message: "Customer saved successfully", customerId });
+      } catch (err) {
+        return handleError("saving customer:", err);
+      }
+    }
+
+    // GET /customer?id= - Fetch customer profile by ID
+    if (httpMethod === 'GET' && path.includes(CUSTOMER_PATH)) {
+      const customerId = event.queryStringParameters?.id;
+      if (!customerId) {
+        return error({ message: "Missing customer ID" }, 400);
+      }
+
+      try {
+        const result = await dynamo.get({
+          TableName: TABLE_NAME,
+          Key: {
             PK: `CUSTOMER#${customerId}`,
-            SK: "PROFILE",
-            recordType: "customer",
-            name,
-            phoneNumber,
-            dob,
-            createdAt: new Date().toISOString(),
-          };
+            SK: PROFILE_SK,
+          },
+        }).promise();
 
-          await dynamo.put({
-            TableName: TABLE_NAME,
-            Item: customerData,
-          }).promise();
-
-          console.log("✅ Customer saved:", customerData);
-          return response(200, { message: "Customer saved", customerId });
-        } catch (err) {
-          console.error("🔥 Error saving customer:", err);
-          return response(500, { message: "Error saving customer" });
+        if (!result.Item) {
+          return error({ message: "Customer not found" }, 404);
         }
+
+        return success(200, result.Item);
+      } catch (err) {
+        return handleError("fetching customer:", err);
       }
+    }
 
-      // GET /customer?id=
-      if (method === "GET" && path.includes("/customer")) {
-        const customerId = event.queryStringParameters?.id;
+    return error({ message: "Method not supported" }, 405);
 
-        if (!customerId) {
-          return response(400, { message: "Missing customer ID" });
-        }
-
-        try {
-          const result = await dynamo.get({
-            TableName: TABLE_NAME,
-            Key: {
-              PK: `CUSTOMER#${customerId}`,
-              SK: "PROFILE",
-            },
-          }).promise();
-
-          if (!result.Item) {
-            return response(404, { message: "Customer not found" });
-          }
-
-          return response(200, result.Item);
-        } catch (err) {
-          console.error("🔥 Error fetching customer:", err);
-          return response(500, { message: "Error fetching customer" });
-        }
-      }
-    return error('Method not supported', 405);
-  } catch (err) {
-    return error(err.message);
+  } catch (err: unknown) {
+    return handleError("🔥 Error customer service:", err);
   }
 };

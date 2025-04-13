@@ -1,172 +1,148 @@
-import { dynamo } from '../utils/dynamoClient';
+import { APIGatewayEvent, Context } from 'aws-lambda';
+import { dynamo, TABLE_NAME } from '../utils/dynamoClient';
 import { success, error } from '../utils/response';
+import { handleError } from '../utils/errorHandler';
 
-export const handler = async (event) => {
-const method = event.httpMethod;
+const REWARD_PREFIX = 'REWARD#';
+const PROFILE_SK = 'PROFILE';
+const RECORD_TYPE_REWARD = 'reward';
 
-try {
-    // POST /rewards
-  if (method === "POST" && path.includes("/rewards")) {
-    const { phoneNumber, rewardType, rewardPoints, period } = JSON.parse(event.body);
+export const handler = async (event: APIGatewayEvent, context: Context) => {
+  const { path, httpMethod, queryStringParameters } = event;
+  console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
+
+  // POST /rewards - Create a new reward
+  if (httpMethod === 'POST' && path === '/rewards') {
+    const { phoneNumber, rewardType, rewardPoints, period } = event.body ? JSON.parse(event.body) : {};
 
     if (!phoneNumber || !rewardType || !rewardPoints) {
-      return response(400, { message: "Missing reward fields" });
+      return error({ message: "Missing reward fields" }, 400);
     }
 
-    const customerId = phoneNumber; // same as you used in POST /customer
+    const customerId = phoneNumber;
     const customerPK = `CUSTOMER#${customerId}`;
 
-    let customer;
     try {
       const result = await dynamo.get({
         TableName: TABLE_NAME,
-        Key: { PK: customerPK, SK: "PROFILE" },
+        Key: { PK: customerPK, SK: PROFILE_SK },
       }).promise();
 
-      customer = result.Item;
-      if (!customer) return response(404, { message: "Customer not found" });
+      const customer = result.Item;
+      if (!customer) return error({ message: "Customer not found" }, 404);
+
+      const rewardId = `${Date.now()}`; // Just the timestamp
+      const rewardData = {
+        PK: customerPK,
+        SK: `${REWARD_PREFIX}${rewardId}`,
+        recordType: RECORD_TYPE_REWARD,
+        rewardType,
+        points: rewardPoints,
+        period: period || null,
+        name: customer.name,
+        dob: customer.dob,
+        phoneNumber: customer.phoneNumber,
+        createdAt: new Date().toISOString(),
+      };
+
+      await dynamo.put({ TableName: TABLE_NAME, Item: rewardData }).promise();
+      return success(201, { message: "Reward saved", rewardId });
     } catch (err) {
-      console.error("🔥 Error fetching customer for reward:", err);
-      return response(500, { message: "Error looking up customer" });
-    }
-
-    const rewardId = `REWARD#${Date.now()}`;
-
-    const rewardData = {
-      PK: customerPK,
-      SK: rewardId,
-      recordType: "reward",
-      rewardType,
-      points: rewardPoints,
-      period: period || null,
-      name: customer.name,
-      dob: customer.dob,
-      phoneNumber: customer.phoneNumber,
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
-      await dynamo.put({
-        TableName: TABLE_NAME,
-        Item: rewardData,
-      }).promise();
-
-      console.log("✅ Reward saved with customer info:", rewardData);
-      return response(200, { message: "Reward saved" });
-    } catch (err) {
-      console.error("🔥 Error saving reward:", err);
-      return response(500, { message: "Error saving reward" });
+      return handleError("saving reward", err);
     }
   }
 
-  // GET /rewards?id=
-  if (method === "GET" && path.includes("/rewards") && !path.includes("/rewards/all")) {
-    const customerId = event.queryStringParameters?.id;
-    if (!customerId) return response(400, { message: "Missing customer ID" });
+  // GET /rewards?id= - Fetch rewards by customer ID
+  if (httpMethod === 'GET' && path === '/rewards' && queryStringParameters?.id) {
+    const customerId = queryStringParameters.id;
+    const customerPK = `CUSTOMER#${customerId}`;
 
     try {
       const result = await dynamo.query({
         TableName: TABLE_NAME,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
         ExpressionAttributeValues: {
-          ":pk": `CUSTOMER#${customerId}`,
-          ":sk": "REWARD#",
+          ":pk": customerPK,
+          ":sk": REWARD_PREFIX,
         },
       }).promise();
-
-      return response(200, result.Items || []);
+      return success(200, result.Items || []);
     } catch (err) {
-      console.error("🔥 Error fetching rewards:", err);
-      return response(500, { message: "Error fetching rewards" });
+      return handleError("fetching rewards", err);
     }
   }
 
-  // GET /rewards/all
-  if (method === "GET" && path.includes("/rewards/all")) {
+  // GET /rewards/all - Fetch all rewards
+  if (httpMethod === 'GET' && path === '/rewards/all') {
     try {
       const result = await dynamo.scan({
         TableName: TABLE_NAME,
         FilterExpression: "begins_with(SK, :sk)",
         ExpressionAttributeValues: {
-          ":sk": "REWARD#",
+          ":sk": REWARD_PREFIX,
         },
       }).promise();
-
-      return response(200, {
-        message: "All rewards fetched",
-        rewards: result.Items || [],
-      });
+      return success(200, { rewards: result.Items || []});
     } catch (err) {
-      console.error("🔥 Error fetching all rewards:", err);
-      return response(500, { message: "Error fetching all rewards" });
+      return handleError("fetching all rewards", err);
     }
   }
 
+  // PUT /rewards/:id - Update reward points and type
+  if (httpMethod === 'PUT' && path.startsWith('/rewards/')) {
+    const rewardKey = path.split('/rewards/')[1];
+    const { rewardPoints, rewardType } = event.body ? JSON.parse(event.body) : {};
 
-  // PUT /rewards/:id
-  if (method === "PUT" && path.includes("/rewards/")) {
-    const rewardId = path.split("/rewards/")[1];
-    const { rewardPoints, rewardType } = JSON.parse(event.body);
-
-    if (!rewardId || !rewardPoints || !rewardType) {
-      return response(400, { message: "Missing fields" });
+    if (!rewardKey || !rewardPoints || !rewardType) {
+      return error({ message: "Missing fields" }, 400);
     }
 
-    // Extract customerId and rewardId
-    const [customerId] = rewardId.split("#");
+    const [customerId, timestamp] = rewardKey.split('#');
+    const rewardSK = `${REWARD_PREFIX}${timestamp}`;
 
     try {
-      const updateParams = {
+      const result = await dynamo.update({
         TableName: TABLE_NAME,
         Key: {
-          PK: `CUSTOMER#${customerId}`, // Use composite PK
-          SK: `REWARD#${rewardId}`,     // Use composite SK
+          PK: `CUSTOMER#${customerId}`,
+          SK: rewardSK,
         },
         UpdateExpression: "SET points = :pts, rewardType = :type",
         ExpressionAttributeValues: {
           ":pts": rewardPoints,
           ":type": rewardType,
         },
-        ReturnValues: "UPDATED_NEW", // To return the updated fields
-      };
+        ReturnValues: "UPDATED_NEW",
+      }).promise();
 
-      const result = await dynamo.update(updateParams).promise();
-      return response(200, {
-        message: "Reward updated successfully",
-        updatedAttributes: result.Attributes,
-      });
+      return success(200, {message: "Reward updated successfully"});
     } catch (err) {
-      console.error("🔥 Error updating reward:", err);
-      return response(500, { message: "Failed to update reward" });
+      return handleError("updating reward", err);
     }
   }
 
-  // DELETE /rewards/:id
-  if (method === "DELETE" && path.includes("/rewards/")) {
-    const rewardId = path.split("/rewards/")[1];
-    if (!rewardId) return response(400, { message: "Missing reward ID" });
+  // DELETE /rewards/:id - Delete a reward
+  if (httpMethod === 'DELETE' && path.startsWith('/rewards/')) {
+    const rewardKey = path.split('/rewards/')[1];
 
-    // Extract customerId and rewardId from rewardId
-    const [customerId] = rewardId.split("#");
+    if (!rewardKey) return error({ message: "Missing reward ID" }, 400);
+
+    const [customerId, timestamp] = rewardKey.split('#');
+    const rewardSK = `${REWARD_PREFIX}${timestamp}`;
 
     try {
-      const deleteParams = {
+      await dynamo.delete({
         TableName: TABLE_NAME,
         Key: {
-          PK: `CUSTOMER#${customerId}`,  // Use composite PK
-          SK: `REWARD#${rewardId}`,      // Use composite SK
+          PK: `CUSTOMER#${customerId}`,
+          SK: rewardSK,
         },
-      };
+      }).promise();
 
-      await dynamo.delete(deleteParams).promise();
-      return response(200, { message: "Reward deleted successfully" });
+      return success(200, { message: "Reward deleted successfully" });
     } catch (err) {
-      console.error("🔥 Error deleting reward:", err);
-      return response(500, { message: "Failed to delete reward" });
+      return handleError("deleting reward", err);
     }
   }
-    return error('Method not supported', 405);
-  } catch (err) {
-    return error(err.message);
-  }
+  return error({ message: "Method not supported" }, 405);
 };
