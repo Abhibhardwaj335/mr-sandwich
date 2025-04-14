@@ -7,7 +7,7 @@ import { handleError } from '../utils/errorHandler';
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN!;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!;
 const BRAND_NAME = "Mr. Sandwich";
-
+const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 // Define a type for the expected response item structure
 interface CustomerProfile {
   PK: string;
@@ -36,13 +36,13 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         TableName: TABLE_NAME,
         Key: {
           PK: `CUSTOMER#${customerId}`,
-          SK: "PROFILE",
+          SK: CUSTOMER_PROFILE_SK,
         },
       }).promise();
 
       if (!result.Item) return error({ message: "Customer not found" }, 404);
 
-      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, period } =
+      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, rewardPeriod } =
         event.body ? JSON.parse(event.body) : {};
 
       if (!phoneNumber || !templateName) {
@@ -86,12 +86,12 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
           break;
 
         case "rewards_summary":
-          if (!rewardPoints || !period)
+          if (!rewardPoints || !rewardPeriod)
             return error({ message: "Missing rewards summary info" }, 400);
           templateParams = [
             { type: "text", text: customerName },
             { type: "text", text: rewardPoints.toString() }, // Convert to string
-            { type: "text", text: period },
+            { type: "text", text: rewardPeriod },
           ];
           break;
 

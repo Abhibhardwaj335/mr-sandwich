@@ -4,7 +4,7 @@ import { success, error } from '../utils/response';
 import { handleError } from '../utils/errorHandler';
 
 const CUSTOMER_PATH = '/customer';
-const PROFILE_SK = 'PROFILE';
+const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 const RECORD_TYPE_CUSTOMER = 'customer';
 
 export const handler = async (event: APIGatewayEvent, context: Context) => {
@@ -21,7 +21,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       const customerId = phoneNumber.substring(3);
       const customerData = {
         PK: `CUSTOMER#${customerId}`,
-        SK: PROFILE_SK,
+        SK: CUSTOMER_PROFILE_SK,
         recordType: RECORD_TYPE_CUSTOMER,
         name,
         phoneNumber,
@@ -54,7 +54,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
           TableName: TABLE_NAME,
           Key: {
             PK: `CUSTOMER#${customerId}`,
-            SK: PROFILE_SK,
+            SK: CUSTOMER_PROFILE_SK,
           },
         }).promise();
 

@@ -28,7 +28,8 @@ export const buildOrderParams = (
   return {
     Item: {
       PK: `ORDER#${orderId}`,
-      SK: 'DETAILS',
+      SK: 'ORDER_DETAILS',
+      recordType: 'order',
       orderId,
       tableId,
       items,

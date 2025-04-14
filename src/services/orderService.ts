@@ -65,7 +65,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
           TableName: TABLE_NAME,
           Key: {
             PK: `ORDER#${orderId}`,
-            SK: 'DETAILS',
+            SK: 'ORDER_DETAILS',
           },
         })
         .promise();

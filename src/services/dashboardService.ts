@@ -4,7 +4,7 @@ import { success, error } from '../utils/response';
 import { handleError } from '../utils/errorHandler';
 
 const CUSTOMER_PATH = '/dashboard';
-const PROFILE_SK = 'PROFILE';
+const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 const REWARD_PREFIX = 'REWARD#';
 const MESSAGE_PREFIX = 'MESSAGE#';
 const COUPON_PREFIX = 'COUPON#';
@@ -25,7 +25,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         TableName: TABLE_NAME,
         Key: {
           PK: `CUSTOMER#${customerId}`,
-          SK: PROFILE_SK,
+          SK: CUSTOMER_PROFILE_SK,
         },
       }).promise();
 

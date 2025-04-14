@@ -35,6 +35,42 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       return success(201, { message: 'Coupon created successfully' });
     }
 
+    // ---------- UPDATE COUPON USAGE COUNT ----------
+    if (httpMethod === 'PUT' && path.startsWith(COUPON_PATH)) {
+      const couponCode = event.queryStringParameters?.code;
+
+      if (!couponCode) {
+        return error({ message: "Missing coupon code in query parameters" }, 400);
+      }
+
+      try {
+        const couponKey = {
+          PK: `COUPON#${couponCode}`,
+          SK: COUPON_DETAILS_SK,
+        };
+
+        const updateParams = {
+          TableName: TABLE_NAME,
+          Key: couponKey,
+          UpdateExpression: "SET usedCount = if_not_exists(usedCount, :zero) + :incr",
+          ExpressionAttributeValues: {
+            ":zero": 0,
+            ":incr": 1,
+          },
+          ReturnValues: "UPDATED_NEW",
+        };
+
+        const result = await dynamo.update(updateParams).promise();
+
+        return success(200, {
+          message: `Coupon ${couponCode} usage incremented`,
+          updatedCount: result.Attributes?.usedCount,
+        });
+      } catch (err) {
+        return handleError("updating coupon usage:", err);
+      }
+    }
+
     // GET /coupons/{couponCode} - Fetch details of a specific coupon
     if (httpMethod === 'GET' && path.startsWith(COUPON_PATH) && event.queryStringParameters?.code) {
       const couponCode = event.queryStringParameters.code.trim();

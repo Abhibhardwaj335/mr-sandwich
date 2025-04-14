@@ -4,7 +4,7 @@ import { success, error } from '../utils/response';
 import { handleError } from '../utils/errorHandler';
 
 const REWARD_PREFIX = 'REWARD#';
-const PROFILE_SK = 'PROFILE';
+const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 const RECORD_TYPE_REWARD = 'reward';
 
 export const handler = async (event: APIGatewayEvent, context: Context) => {
@@ -13,7 +13,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
 
   // POST /rewards - Create a new reward
   if (httpMethod === 'POST' && path === '/rewards') {
-    const { phoneNumber, rewardType, rewardPoints, period } = event.body ? JSON.parse(event.body) : {};
+    const { phoneNumber, rewardType, rewardPoints, rewardPeriod } = event.body ? JSON.parse(event.body) : {};
 
     if (!phoneNumber || !rewardType || !rewardPoints) {
       return error({ message: "Missing reward fields" }, 400);
@@ -25,7 +25,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     try {
       const result = await dynamo.get({
         TableName: TABLE_NAME,
-        Key: { PK: customerPK, SK: PROFILE_SK },
+        Key: { PK: customerPK, SK: CUSTOMER_PROFILE_SK },
       }).promise();
 
       const customer = result.Item;
@@ -38,7 +38,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         recordType: RECORD_TYPE_REWARD,
         rewardType,
         points: rewardPoints,
-        period: period || null,
+        period: rewardPeriod || null,
         name: customer.name,
         dob: customer.dob,
         phoneNumber: customer.phoneNumber,
