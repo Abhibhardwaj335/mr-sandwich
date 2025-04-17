@@ -14,7 +14,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     // POST /customer - Create a new customer
     if (httpMethod === 'POST' && path.includes(CUSTOMER_PATH)) {
       const { name, phoneNumber, dob } = event.body ? JSON.parse(event.body) : {};
-      if (!name || !phoneNumber || !dob) {
+      if (!name || !phoneNumber) {
         return error({ message: "Missing required fields" }, 400);
       }
 
