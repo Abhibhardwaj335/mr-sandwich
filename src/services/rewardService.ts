@@ -88,53 +88,77 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     }
   }
 
-  // PUT /rewards/:id - Update reward points and type
-  if (httpMethod === 'PUT' && path.startsWith('/rewards/')) {
-    const rewardKey = path.split('/rewards/')[1];
-    const { rewardPoints, rewardType } = event.body ? JSON.parse(event.body) : {};
+  // PUT /rewards?id=...
+  if (httpMethod === 'PUT' && path === '/rewards') {
+    const customerId = queryStringParameters?.id;
+    const { rewardPoints, rewardType, rewardPeriod, timestamp } = event.body ? JSON.parse(event.body) : {};
 
-    if (!rewardKey || !rewardPoints || !rewardType) {
-      return error({ message: "Missing fields" }, 400);
+    if (!customerId || !rewardType || !rewardPoints || !timestamp) {
+      return error({ message: "Missing required fields" }, 400);
     }
 
-    const [customerId, timestamp] = rewardKey.split('#');
-    const rewardSK = `${REWARD_PREFIX}${timestamp}`;
+    const customerPK = `CUSTOMER#${customerId}`;
+    const rewardSK = `REWARD#${timestamp}`;
 
     try {
-      const result = await dynamo.update({
+      await dynamo.update({
         TableName: TABLE_NAME,
         Key: {
-          PK: `CUSTOMER#${customerId}`,
+          PK: customerPK,
           SK: rewardSK,
         },
-        UpdateExpression: "SET points = :pts, rewardType = :type",
+        UpdateExpression: "SET points = :pts, rewardType = :type, period = :period",
         ExpressionAttributeValues: {
           ":pts": rewardPoints,
           ":type": rewardType,
+          ":period": rewardPeriod || "Weekly",
         },
         ReturnValues: "UPDATED_NEW",
       }).promise();
 
-      return success(200, {message: "Reward updated successfully"});
+      return success(200, { message: "Reward updated successfully" });
     } catch (err) {
       return handleError("updating reward", err);
     }
   }
 
-  // DELETE /rewards/:id - Delete a reward
-  if (httpMethod === 'DELETE' && path.startsWith('/rewards/')) {
-    const rewardKey = path.split('/rewards/')[1];
+  // DELETE /rewards?id=...&timestamp=...&rewardType=...
+  if (httpMethod === 'DELETE' && path === '/rewards') {
+    const customerId = queryStringParameters?.id;
+    const timestamp = queryStringParameters?.timestamp;
+    const rewardType = queryStringParameters?.rewardType;
 
-    if (!rewardKey) return error({ message: "Missing reward ID" }, 400);
+    if (!customerId || !timestamp || !rewardType) {
+      return error({ message: "Missing customer ID, reward type, or timestamp" }, 400);
+    }
 
-    const [customerId, timestamp] = rewardKey.split('#');
-    const rewardSK = `${REWARD_PREFIX}${timestamp}`;
+    const customerPK = `CUSTOMER#${customerId}`;
+    const rewardSK = `REWARD#${timestamp}`;
 
     try {
+      // Fetch the reward first to verify rewardType matches
+      const result = await dynamo.get({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: customerPK,
+          SK: rewardSK,
+        },
+      }).promise();
+
+      const reward = result.Item;
+
+      if (!reward) {
+        return error({ message: "Reward not found" }, 404);
+      }
+
+      if (reward.rewardType !== rewardType) {
+        return error({ message: "Reward type mismatch" }, 400);
+      }
+
       await dynamo.delete({
         TableName: TABLE_NAME,
         Key: {
-          PK: `CUSTOMER#${customerId}`,
+          PK: customerPK,
           SK: rewardSK,
         },
       }).promise();

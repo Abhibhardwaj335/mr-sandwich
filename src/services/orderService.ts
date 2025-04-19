@@ -29,6 +29,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       paymentDetails,
       name,
       phoneNumber,
+      total
     } = event.body ? JSON.parse(event.body) : {};
 
     if (!tableId) return error({ message: 'Missing tableId' }, 400);
@@ -42,7 +43,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
 
     const orderParams = {
       TableName: TABLE_NAME,
-      ...buildOrderParams(orderId, tableId, items, paymentDetails, createdAt, 'PENDING', name, phoneNumber),
+      ...buildOrderParams(orderId, tableId, items, paymentDetails, total, createdAt, 'PENDING', name, phoneNumber),
     };
 
     try {

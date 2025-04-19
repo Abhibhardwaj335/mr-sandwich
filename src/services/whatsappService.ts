@@ -6,6 +6,7 @@ import { handleError } from '../utils/errorHandler';
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN!;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!;
+const ADMIN_WHATSAPP_PHONE_NUMBER = process.env.ADMIN_WHATSAPP_PHONE_NUMBER!;
 const BRAND_NAME = "Mr. Sandwich";
 const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 // Define a type for the expected response item structure
@@ -32,9 +33,11 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   
     try {
       // Special handling for admin notifications which don't need customer lookup
-      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, rewardPeriod, tableId, orderTotal, items } =
+      const { phoneNumber: basePhoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, rewardPeriod, tableId, orderTotal, items } =
         event.body ? JSON.parse(event.body) : {};
-  
+
+      const phoneNumber = customerId == "admin" ? ADMIN_WHATSAPP_PHONE_NUMBER : basePhoneNumber;
+
       if (!phoneNumber || !templateName) {
         return error({ message: "Missing phone number or template name" }, 400);
       }
@@ -43,7 +46,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       if (typeof phoneNumber !== 'string') {
         return error({ message: "Invalid phone number" }, 400);
       }
-  
+
       let templateParams: { type: string; text: string }[] = [];
       let customerName = "Admin"; // Default for admin notifications
   

@@ -20,12 +20,13 @@ export const buildOrderParams = (
   tableId: string,
   items: Item[],
   paymentDetails: PaymentDetails,
+  total: string,
   timestamp: string,
   status: string = 'PENDING',
   name: string,
   phoneNumber: string
 ) => {
-  const totalAmount = calculateTotalAmount(items);
+  const totalAmount = (total !== undefined && total !== null) ? total : calculateTotalAmount(items);
 
   return {
     Item: {
