@@ -29,34 +29,39 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
   if (httpMethod === "POST" && path === "/whatsapp") {
     const customerId = event.queryStringParameters?.id;
     if (!customerId) return error({ message: "Missing customer ID" }, 400);
-
+  
     try {
-      // Fetch customer profile from DynamoDB
-      const result = await dynamo.get({
-        TableName: TABLE_NAME,
-        Key: {
-          PK: `CUSTOMER#${customerId}`,
-          SK: CUSTOMER_PROFILE_SK,
-        },
-      }).promise();
-
-      if (!result.Item) return error({ message: "Customer not found" }, 404);
-
-      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, rewardPeriod } =
+      // Special handling for admin notifications which don't need customer lookup
+      const { phoneNumber, templateName, promoCode, menuItem, occasion, rewardPoints, rewardPeriod, tableId, orderTotal, items } =
         event.body ? JSON.parse(event.body) : {};
-
+  
       if (!phoneNumber || !templateName) {
         return error({ message: "Missing phone number or template name" }, 400);
       }
-
+  
       // Ensure phoneNumber is a valid string
       if (typeof phoneNumber !== 'string') {
         return error({ message: "Invalid phone number" }, 400);
       }
-
-      const customerName = (result.Item as CustomerProfile).name; // Typecasting
+  
       let templateParams: { type: string; text: string }[] = [];
-
+      let customerName = "Admin"; // Default for admin notifications
+  
+      // If not an admin notification, fetch customer profile
+      if (customerId !== "admin") {
+        // Fetch customer profile from DynamoDB
+        const result = await dynamo.get({
+          TableName: TABLE_NAME,
+          Key: {
+            PK: `CUSTOMER#${customerId}`,
+            SK: CUSTOMER_PROFILE_SK,
+          },
+        }).promise();
+  
+        if (!result.Item) return error({ message: "Customer not found" }, 404);
+        customerName = (result.Item as CustomerProfile).name; // Typecasting
+      }
+  
       switch (templateName) {
         case "promocode_update":
           if (!promoCode) return error({ message: "Missing promo code" }, 400);
@@ -66,7 +71,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
             { type: "text", text: BRAND_NAME },
           ];
           break;
-
+  
         case "new_menu_alert":
           if (!menuItem) return error({ message: "Missing menu item" }, 400);
           templateParams = [
@@ -75,7 +80,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
             { type: "text", text: BRAND_NAME },
           ];
           break;
-
+  
         case "exclusive_offer":
           if (!occasion) return error({ message: "Missing occasion" }, 400);
           templateParams = [
@@ -84,7 +89,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
             { type: "text", text: BRAND_NAME },
           ];
           break;
-
+  
         case "rewards_summary":
           if (!rewardPoints || !rewardPeriod)
             return error({ message: "Missing rewards summary info" }, 400);
@@ -94,14 +99,34 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
             { type: "text", text: rewardPeriod },
           ];
           break;
-
+          
+        case "new_order":
+          if (!tableId || !orderTotal || !items)
+            return error({ message: "Missing order information" }, 400);
+          templateParams = [
+            { type: "text", text: tableId },
+            { type: "text", text: orderTotal },
+            { type: "text", text: items },
+          ];
+          break;
+          
+        case "order_update":
+          if (!tableId || !orderTotal || !items)
+            return error({ message: "Missing order information" }, 400);
+          templateParams = [
+            { type: "text", text: tableId },
+            { type: "text", text: orderTotal },
+            { type: "text", text: items },
+          ];
+          break;
+  
         default:
           return error({ message: "Invalid template name" }, 400);
       }
-
+  
       // Send WhatsApp message via the API
       const url = `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
+  
       const response = await axios.post(
         url,
         {
@@ -126,7 +151,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
           },
         }
       );
-
+  
       return success(200, { message: "WhatsApp message sent!" });
     } catch (err: unknown) {
       return handleError("sending WhatsApp", err);
