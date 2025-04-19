@@ -23,18 +23,26 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
 
   // ---------- CREATE ORDER ----------
   if (httpMethod === 'POST' && path === '/orders') {
-    const { tableId, items, paymentDetails } = event.body ? JSON.parse(event.body) : {};
+    const {
+      tableId,
+      items,
+      paymentDetails,
+      name,
+      phoneNumber,
+    } = event.body ? JSON.parse(event.body) : {};
 
     if (!tableId) return error({ message: 'Missing tableId' }, 400);
     if (!items || !items.length) return error({ message: 'Missing order items' }, 400);
     if (!paymentDetails) return error({ message: 'Missing payment details' }, 400);
+    if (!name || !phoneNumber)
+      return error({ message: 'Missing customer name or phone number' }, 400);
 
     const orderId = generateOrderId();
     const createdAt = new Date().toISOString();
 
     const orderParams = {
       TableName: TABLE_NAME,
-      ...buildOrderParams(orderId, tableId, items, paymentDetails, createdAt),
+      ...buildOrderParams(orderId, tableId, items, paymentDetails, createdAt, 'PENDING', name, phoneNumber),
     };
 
     try {
@@ -46,6 +54,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       return handleError('placing order:', err);
     }
   }
+
 
   // ---------- UPDATE EXISTING ORDER ----------
   if (httpMethod === 'PUT' && path === '/orders') {

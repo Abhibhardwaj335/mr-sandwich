@@ -21,7 +21,9 @@ export const buildOrderParams = (
   items: Item[],
   paymentDetails: PaymentDetails,
   timestamp: string,
-  status: string = 'PENDING'
+  status: string = 'PENDING',
+  name: string,
+  phoneNumber: string
 ) => {
   const totalAmount = calculateTotalAmount(items);
 
@@ -32,6 +34,8 @@ export const buildOrderParams = (
       recordType: 'order',
       orderId,
       tableId,
+      name,
+      phoneNumber,
       items,
       totalAmount,
       paymentDetails,
