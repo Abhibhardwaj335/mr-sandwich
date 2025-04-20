@@ -59,11 +59,27 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       }).promise();
 
       if (existingRewardsResult.Items && existingRewardsResult.Items.length > 0) {
-        // Customer already has this reward type
-        return error({
-          message: "Customer already has this reward type",
-          details: "EXISTING_REWARD"
-        }, 409); // 409 Conflict
+        const existingReward = existingRewardsResult.Items[0];
+        const updatedPoints = (existingReward.points || 0) + rewardPoints;
+
+        await dynamo.update({
+          TableName: TABLE_NAME,
+          Key: {
+            PK: existingReward.PK,
+            SK: existingReward.SK,
+          },
+          UpdateExpression: 'SET points = :points, updatedAt = :updatedAt',
+          ExpressionAttributeValues: {
+            ':points': updatedPoints,
+            ':updatedAt': new Date().toISOString(),
+          },
+        }).promise();
+
+        return success(200, {
+          message: "Reward updated",
+          rewardId: existingReward.SK.replace(REWARD_PREFIX, ''),
+          totalPoints: updatedPoints,
+        });
       }
 
       // If no existing reward found, proceed with creating a new one
