@@ -23,14 +23,36 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     const customerPK = `CUSTOMER#${customerId}`;
 
     try {
-      const result = await dynamo.get({
+      // Check if customer exists
+      const customerResult = await dynamo.get({
         TableName: TABLE_NAME,
         Key: { PK: customerPK, SK: CUSTOMER_PROFILE_SK },
       }).promise();
 
-      const customer = result.Item;
+      const customer = customerResult.Item;
       if (!customer) return error({ message: "Customer not found" }, 404);
 
+      // Check if customer already has a reward of this type
+      const existingRewardsResult = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :reward_prefix)',
+        FilterExpression: 'rewardType = :rewardType',
+        ExpressionAttributeValues: {
+          ':pk': customerPK,
+          ':reward_prefix': REWARD_PREFIX,
+          ':rewardType': rewardType
+        }
+      }).promise();
+
+      if (existingRewardsResult.Items && existingRewardsResult.Items.length > 0) {
+        // Customer already has this reward type
+        return error({
+          message: "Customer already has this reward type",
+          details: "EXISTING_REWARD"
+        }, 409); // 409 Conflict
+      }
+
+      // If no existing reward found, proceed with creating a new one
       const rewardId = `${Date.now()}`; // Just the timestamp
       const rewardData = {
         PK: customerPK,
@@ -49,6 +71,85 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       return success(201, { message: "Reward saved", rewardId });
     } catch (err) {
       return handleError("saving reward", err);
+    }
+  }
+
+  // PUT /rewards/redeem
+  if (httpMethod === 'PUT' && path === '/rewards/redeem') {
+    const { phoneNumber, pointsToRedeem } = event.body ? JSON.parse(event.body) : {};
+
+    if (!phoneNumber || !pointsToRedeem || pointsToRedeem <= 0) {
+      return error({ message: "Missing phone number or invalid points to redeem" }, 400);
+    }
+
+    const customerPK = `CUSTOMER#${phoneNumber}`;
+    let remainingPointsToRedeem = pointsToRedeem;
+
+    try {
+      // 1. Get all rewards for this customer
+      const rewardsResult = await dynamo.query({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :reward_prefix)',
+        ExpressionAttributeValues: {
+          ':pk': customerPK,
+          ':reward_prefix': REWARD_PREFIX,
+        }
+      }).promise();
+
+      const rewards = rewardsResult.Items || [];
+      if (rewards.length === 0) {
+        return error({ message: "No rewards found for this customer" }, 404);
+      }
+
+      // 2. Calculate total available points
+      const totalAvailablePoints = rewards.reduce((total, reward) => total + reward.points, 0);
+      if (totalAvailablePoints < pointsToRedeem) {
+        return error({ message: `Not enough points. Available: ${totalAvailablePoints}, Requested: ${pointsToRedeem}` }, 400);
+      }
+
+      // 3. Sort rewards by some criteria (here by creation date)
+      rewards.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      // 4. Prepare batch updates
+      const updatedRewards = [];
+
+      for (const reward of rewards) {
+        if (remainingPointsToRedeem <= 0) break;
+
+        const pointsToDeduct = Math.min(reward.points, remainingPointsToRedeem);
+        const newPoints = reward.points - pointsToDeduct;
+
+        updatedRewards.push({
+          PK: reward.PK,
+          SK: reward.SK,
+          points: newPoints
+        });
+
+        remainingPointsToRedeem -= pointsToDeduct;
+      }
+
+      // 5. Update all affected rewards
+      const batchWriteParams = {
+        RequestItems: {
+          [TABLE_NAME]: updatedRewards.map(reward => ({
+            PutRequest: {
+              Item: {
+                ...reward,
+                // Make sure to include all other required attributes
+              }
+            }
+          }))
+        }
+      };
+
+      await dynamo.batchWrite(batchWriteParams).promise();
+
+      return success(200, {
+        message: "Points redeemed successfully",
+        pointsRedeemed: pointsToRedeem
+      });
+    } catch (err) {
+      return handleError("redeeming points", err);
     }
   }
 
