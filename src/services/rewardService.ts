@@ -7,6 +7,20 @@ const REWARD_PREFIX = 'REWARD#';
 const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 const RECORD_TYPE_REWARD = 'reward';
 
+interface RewardItem {
+  PK: string;
+  SK: string;
+  recordType: string;
+  rewardType: string;
+  points: number;
+  period?: string;
+  name?: string;
+  dob?: string;
+  phoneNumber?: string;
+  createdAt: string;
+}
+
+
 export const handler = async (event: APIGatewayEvent, context: Context) => {
   const { path, httpMethod, queryStringParameters } = event;
   console.log(`Processing request - Path: ${path}, Method: ${httpMethod}`);
@@ -96,7 +110,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         }
       }).promise();
 
-      const rewards = rewardsResult.Items || [];
+      const rewards = rewardsResult.Items as RewardItem[] || [];
       if (rewards.length === 0) {
         return error({ message: "No rewards found for this customer" }, 404);
       }
@@ -107,10 +121,10 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         return error({ message: `Not enough points. Available: ${totalAvailablePoints}, Requested: ${pointsToRedeem}` }, 400);
       }
 
-      // 3. Sort rewards by some criteria (here by creation date)
+      // 3. Sort rewards by createdAt
       rewards.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-      // 4. Prepare batch updates
+      // 4. Prepare updated/deleted rewards
       const updatedRewards = [];
 
       for (const reward of rewards) {
@@ -120,25 +134,34 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         const newPoints = reward.points - pointsToDeduct;
 
         updatedRewards.push({
-          PK: reward.PK,
-          SK: reward.SK,
-          points: newPoints
+          ...reward,              // keep all original fields
+          points: newPoints       // update points
         });
 
         remainingPointsToRedeem -= pointsToDeduct;
       }
 
-      // 5. Update all affected rewards
+      // 5. Batch write: update or delete rewards
       const batchWriteParams = {
         RequestItems: {
-          [TABLE_NAME]: updatedRewards.map(reward => ({
-            PutRequest: {
-              Item: {
-                ...reward,
-                // Make sure to include all other required attributes
-              }
+          [TABLE_NAME]: updatedRewards.map(reward => {
+            if (reward.points > 0) {
+              return {
+                PutRequest: {
+                  Item: reward
+                }
+              };
+            } else {
+              return {
+                DeleteRequest: {
+                  Key: {
+                    PK: reward.PK,
+                    SK: reward.SK
+                  }
+                }
+              };
             }
-          }))
+          })
         }
       };
 

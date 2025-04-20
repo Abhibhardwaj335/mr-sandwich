@@ -29,6 +29,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
       paymentDetails,
       name,
       phoneNumber,
+      pointsRedeemed,
       total
     } = event.body ? JSON.parse(event.body) : {};
 
@@ -43,7 +44,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
 
     const orderParams = {
       TableName: TABLE_NAME,
-      ...buildOrderParams(orderId, tableId, items, paymentDetails, total, createdAt, 'PENDING', name, phoneNumber),
+      ...buildOrderParams(orderId, tableId, items, paymentDetails, pointsRedeemed, total, createdAt, 'PENDING', name, phoneNumber),
     };
 
     try {
