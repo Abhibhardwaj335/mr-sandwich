@@ -4,6 +4,7 @@ import { success, error } from '../utils/response';
 import { handleError } from '../utils/errorHandler';
 
 const CUSTOMER_PATH = '/customer';
+const CUSTOMERS_PATH = '/customers';
 const CUSTOMER_PROFILE_SK = 'CUSTOMER_PROFILE';
 const RECORD_TYPE_CUSTOMER = 'customer';
 
@@ -43,7 +44,7 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
     }
 
     // GET /customer?id= - Fetch customer profile by ID
-    if (httpMethod === 'GET' && path.includes(CUSTOMER_PATH)) {
+    if (httpMethod === 'GET' && path.includes(CUSTOMER_PATH) && !path.includes(CUSTOMERS_PATH)) {
       const customerId = event.queryStringParameters?.id;
       if (!customerId) {
         return error({ message: "Missing customer ID" }, 400);
@@ -65,6 +66,41 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {
         return success(200, result.Item);
       } catch (err) {
         return handleError("fetching customer:", err);
+      }
+    }
+
+    // GET /customers - Fetch all customers
+    if (httpMethod === 'GET' && path.includes(CUSTOMERS_PATH)) {
+      try {
+        // Using scan to get all customer records
+        // Note: In production, consider using pagination for large datasets
+        const result = await dynamo.scan({
+          TableName: TABLE_NAME,
+          FilterExpression: "SK = :sk AND recordType = :recordType",
+          ExpressionAttributeValues: {
+            ":sk": CUSTOMER_PROFILE_SK,
+            ":recordType": RECORD_TYPE_CUSTOMER,
+          },
+        }).promise();
+
+        // Extract customer data and format response
+        const customers = (result.Items || []).map(item => ({
+          customerId: item.PK?.replace('CUSTOMER#', ''), // Extract ID from PK
+          name: item.name,
+          phoneNumber: item.phoneNumber,
+          dob: item.dob,
+          createdAt: item.createdAt,
+          // Add any other customer fields you want to include
+        }));
+
+        const responseBody = {
+          customers: customers,
+          count: customers.length,
+        };
+
+        return success(200, responseBody);
+      } catch (err: unknown) {
+        return handleError("fetching all customers:", err);
       }
     }
 

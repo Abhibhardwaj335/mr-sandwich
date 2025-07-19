@@ -6,6 +6,8 @@ import { handler as rewardHandler } from './src/services/rewardService';
 import { handler as couponHandler } from './src/services/couponService';
 import { handler as dashboardHandler } from './src/services/dashboardService';
 import { handler as whatsappHandler } from './src/services/whatsappService';
+import { handler as expenseHandler } from './src/services/expenseService';
+import { handler as saleHandler } from './src/services/saleService';
 
 export const handler = async (event: APIGatewayEvent, context: Context) => {  // Type 'event' as 'APIGatewayEvent' and 'context' as 'Context'
   const path = event.path;
@@ -19,6 +21,8 @@ export const handler = async (event: APIGatewayEvent, context: Context) => {  //
   if (path.startsWith('/dashboard')) return dashboardHandler(event, context);
   if (path.startsWith('/messages')) return whatsappHandler(event, context);
   if (path.startsWith('/whatsapp')) return whatsappHandler(event, context);
+  if (path.startsWith('/expense')) return expenseHandler(event, context);
+  if (path.startsWith('/sale')) return saleHandler(event, context);
 
   return {
     statusCode: 404,
